@@ -1,7 +1,7 @@
 Summary: Utility for converting FIG files (made by xfig) to other formats
 Name: transfig
 Version: 3.2.5
-Release: 9%{?dist}
+Release: 10%{?dist}
 Epoch: 1
 License: MIT
 URL: http://www.xfig.org/
@@ -12,6 +12,7 @@ Patch0: transfig-3.2.5-optflags.patch
 Patch5: transfig-3.2.5-modularX.patch
 Patch6: transfig-3.2.5-bitmap.patch
 Patch7: transfig-3.2.5-bz605120.patch
+Patch8: transfig-3.2.5-bz858718.patch
 
 Requires:	ghostscript
 Requires:	bc
@@ -40,6 +41,7 @@ figures into certain graphics languages.
 %patch5 -p1 -b .modularX
 %patch6 -p1 -b .bitmap
 %patch7 -p1 -b .bz605120
+%patch8 -p1 -b .bz858718
 # fix source permissions
 find -type f -exec chmod -x {} \;
 
@@ -73,6 +75,9 @@ rm -rf %{buildroot}
 %{_datadir}/fig2dev
 
 %changelog
+* Fri Feb 14 2014 Kamil Dudka <kdudka@redhat.com> - 1:3.2.5-10
+- fix printing PostScript from xfig (#858718)
+
 * Mon Jun 21 2010 Kamil Dudka <kdudka@redhat.com> - 1:3.2.5-9
 - suppress a compile-time warning (#605120)
 

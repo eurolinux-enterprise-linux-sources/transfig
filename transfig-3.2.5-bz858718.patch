@@ -1,0 +1,163 @@
+From 994a60099394a7705dfd91e31888e0b2671748bd Mon Sep 17 00:00:00 2001
+From: Kamil Dudka <kdudka@redhat.com>
+Date: Wed, 19 Sep 2012 17:38:19 +0200
+Subject: [PATCH] fix printing PostScript from xfig (#858718)
+
+08.1_PS-DSC-fix.dpatch by Ronald Lembcke <es186@fen-net.de>
+
+The attached patch makes fig2dev produce more correctly structured
+PostScript.
+* Files get printed via Cups on PostScript printers.
+* When viewing a .ps-file in gv you can go to the last page and back
+  and to the last page again without getting PostScript errors
+---
+ fig2dev/dev/genps.c |   58 +++++++++++++++++++++++++++++++++-----------------
+ 1 files changed, 38 insertions(+), 20 deletions(-)
+
+diff --git a/fig2dev/dev/genps.c b/fig2dev/dev/genps.c
+index 018080c..4dc6b06 100644
+--- a/fig2dev/dev/genps.c
++++ b/fig2dev/dev/genps.c
+@@ -749,6 +749,7 @@ F_compound	*objects;
+ 	  }
+ 	}
+ 
++	fprintf(tfp,"%%%%BeginProlog\n");
+ 	if (pats_used)
+ 		fprintf(tfp,"/MyAppDict 100 dict dup begin def\n");
+ 	fprintf(tfp, "%s", BEGIN_PROLOG1);
+@@ -758,13 +759,6 @@ F_compound	*objects;
+ 	genps_usr_colors();
+ 	fprintf(tfp, "\nend\n");
+ 
+-	/* must specify translation/rotation before definition of fill patterns */
+-	fprintf(tfp, "save\n");
+- 
+-	/* now make the clipping path for the BoundingBox */
+-	fprintf(tfp, "newpath %d %d moveto %d %d lineto %d %d lineto %d %d lineto closepath clip newpath\n",
+-		cliplx,clipuy, cliplx,cliply, clipux,cliply, clipux,clipuy);
+-
+ 	/* fill the Background now if specified */
+  	if (bgspec) {
+  	    fprintf(tfp, "%% Fill background color\n");
+@@ -785,12 +779,6 @@ F_compound	*objects;
+ 
+ 	/* translate (in multi-page mode this is done at end of this proc) */
+ 	/* (rotation and y flipping is done in %%BeginPageSetup area */
+-	if (!multi_page) {
+-	    fprintf(tfp, "%.1f %.1f translate\n", origx, origy);
+-	    if (epsflag)
+-		/* increasing y goes down */
+-		fprintf(tfp, "1 -1 scale\n");
+-	}
+ 	if (pats_used) {
+ 	    int i;
+ 	    /* only define the patterns that are used */
+@@ -839,24 +827,52 @@ F_compound	*objects;
+ 	
+ 	fprintf(tfp, "%s\n", END_PROLOG);
+ 
++	fprintf(tfp, "/pageheader {\n");
++
++	/* must specify translation/rotation before definition of fill patterns */
++	fprintf(tfp, "save\n");
++
++	/* now make the clipping path for the BoundingBox */
++	fprintf(tfp, "newpath %d %d moveto %d %d lineto %d %d lineto %d %d lineto closepath clip newpath\n",
++		cliplx,clipuy, cliplx,cliply, clipux,cliply, clipux,clipuy);
++	if (!multi_page) {
++	    fprintf(tfp, "%.1f %.1f translate\n", origx, origy);
++	    if (epsflag)
++		/* increasing y goes down */
++		fprintf(tfp, "1 -1 scale\n");
++	}
++
+ 	fprintf(tfp, "$F2psBegin\n");
+ 
+ 	fprintf(tfp, "10 setmiterlimit\n");	/* make like X server (11 degrees) */
+ 	fprintf(tfp, "0 slj 0 slc\n");		/* set initial join style to miter and cap to butt */
++	if( !multi_page)
++	    fprintf(tfp, " %.5f %.5f sc\n", scalex, scaley );
++	fprintf(tfp,"} bind def\n");
++
++
++	fprintf(tfp,"/pagefooter {\n");
++	fprintf(tfp,"$F2psEnd\n");
++	fprintf(tfp,"restore\n");
++	fprintf(tfp,"} bind def\n");
++
+ 
+  	if (multi_page) {
+ 	    /* reset the matrix for multipage mode */
+ 	    fprintf(tfp, "initmatrix\n");
+ 	} else {
+-	    fprintf(tfp, " %.5f %.5f sc\n", scalex, scaley );
++	    fprintf(tfp,"%%%%EndProlog\n");
+ 	    if (!epsflag) {
+ 		fprintf(tfp,"%%%%Page: 1 1\n");
+ 		fprintf(tfp, "%%%%BeginPageSetup\n");
++		fprintf(tfp,"pageheader\n");
+ 		if (landscape)
+ 		    fprintf(tfp, " 90 rotate\n");
+ 		/* increasing y goes down */
+ 		fprintf(tfp, "1 -1 scale\n");
+ 		fprintf(tfp, "%%%%EndPageSetup\n");
++	    } else {
++		fprintf(tfp,"pageheader\n");
+ 	    }
+ 	}
+ 
+@@ -978,6 +994,7 @@ genps_end()
+ 
+     /* for multipage, translate and output objects for each page */
+     if (multi_page) {
++	fprintf(tfp,"%%%%EndProlog\n");
+ 	page = 1;
+ 	if (overlap)
+ 	    mul = 0.9;
+@@ -990,6 +1007,7 @@ genps_end()
+ 	    for (dx=0; (dx < (furx-w*0.1)) || (page == 1); dx += w*mul) {
+ 		fprintf(tfp, "%%%%Page: %d %d\n",page,page);
+ 
++		fprintf(tfp, "pageheader\n");
+ 		/* do page rotation here */
+ 		fprintf(tfp, "%%%%BeginPageSetup\n");
+ 		    if (landscape) {
+@@ -1011,6 +1029,7 @@ genps_end()
+ 		    fprintf(tfp, "\n");
+ 		}
+ 		fprintf(tfp, "gr\n");
++		fprintf(tfp, "pagefooter\n");
+ 		fprintf(tfp, "showpage\n");
+ 		page++;
+ 	    }
+@@ -1019,14 +1038,11 @@ genps_end()
+     /* Close the (last) figure */
+     do_split(-10);
+ 
+-    fprintf(tfp, "$F2psEnd\n");
+-    fprintf(tfp, "rs\n");
+-
+-    if (pats_used)
+-	fprintf(tfp, "end\n");		/* close off MyAppDict */
+     /* add showpage if requested */
+-    if (!multi_page)
++    if (!multi_page) {
++	fprintf(tfp, "pagefooter\n");
+ 	fprintf(tfp, "showpage\n");
++    }
+ 
+     /* does the user want an ASCII or TIFF preview? */
+     if (tiffpreview || asciipreview) {
+@@ -1100,6 +1116,8 @@ genps_end()
+     }
+     /* put any cleanup between %%Trailer and %EOF */
+     fprintf(tfp, "%%%%Trailer\n");
++    if (pats_used)
++	fprintf(tfp, "end\n");		/* close off MyAppDict */
+     /* final DSC comment for eps output (EOF = end of document) */
+     fprintf(tfp, "%%EOF\n");
+ 
+-- 
+1.7.1
+
